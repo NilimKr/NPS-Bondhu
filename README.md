@@ -10,9 +10,9 @@ NPS Bondhu is an intelligent virtual assistant that helps NPS (National Pension 
 
 ### Key Features:
 - ✅ **AI-Powered Q&A** - Ask questions in natural language
+- ✅ **Multilingual Support** - English, Hindi (हिन्दी), Assamese (অসমীয়া)
 - ✅ **Source Citations** - Every answer includes source references
 - ✅ **Pension Calculator** - Estimate your retirement corpus
-- ✅ **Multilingual Support** - (Coming soon)
 - ✅ **Official Documents** - Powered by 15 official NPS PDFs
 
 ---
@@ -117,6 +117,12 @@ The system uses **15 official NPS documents** from PFRDA:
 - Calculate annuity corpus (40%)
 - Estimate monthly pension
 
+### 3. 🌍 Multilingual Support
+- **Languages:** English, Hindi (हिन्दी), Assamese (অসমীয়া)
+- **Auto-Translation:** Queries are translated to English for processing, then answers are translated back
+- **UI Localization:** Interface elements adapt to selected language
+- **Transparent:** Source citations remain in English (original source)
+
 ---
 
 ## ⚙️ Configuration
@@ -219,9 +225,9 @@ Enable in sidebar to see:
 - [x] Source citations
 - [x] Optimized retrieval (MMR, caching, streaming)
 - [x] Streamlit web interface
+- [x] Multilingual support (Hindi, Assamese)
 
 ### Coming Soon 🚧
-- [ ] Multilingual support (Hindi, Bengali, etc.)
 - [ ] Voice input/output
 - [ ] PDF export of conversations
 - [ ] User authentication
@@ -257,5 +263,5 @@ For issues or questions:
 
 **Built with ❤️ for NPS subscribers**
 
-**Version:** 2.0 (Optimized Production)  
-**Last Updated:** February 6, 2026
+**Version:** 2.1 (Multilingual Update)  
+**Last Updated:** February 19, 2026

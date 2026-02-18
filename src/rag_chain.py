@@ -121,13 +121,14 @@ def get_llm(streaming=False):
     
     return llm
 
-def get_rag_chain(streaming=False, search_type="mmr"):
+def get_rag_chain(streaming=False, search_type="mmr", language="English"):
     """
     Initializes and returns an optimized RAG chain using LCEL.
     
     Args:
         streaming: Enable streaming responses for better UX
         search_type: "similarity" | "mmr" | "similarity_score_threshold"
+        language: Language for responses ("English", "Hindi", "Assamese")
     
     Optimizations:
     - Smaller chunks (500 chars) for better precision
@@ -143,7 +144,7 @@ def get_rag_chain(streaming=False, search_type="mmr"):
     # Get LLM with streaming support
     llm = get_llm(streaming=streaming)
 
-    # Create Prompt
+    # Create Prompt (always in English - translation handled externally)
     system_prompt = (
         "You are 'NPS Bondhu', an official assistant for the National Pension System (NPS). "
         "Use the following pieces of retrieved context to answer the question. "
@@ -202,9 +203,14 @@ def format_sources_for_display(docs):
     # Format as: (PDF Name, page - X)
     return f"({source_file}, page - {page})"
 
-def get_rag_chain_with_sources(streaming=False, search_type="mmr"):
+def get_rag_chain_with_sources(streaming=False, search_type="mmr", language="English"):
     """
     Returns a RAG chain that provides both answer and sources.
+    
+    Args:
+        streaming: Enable streaming responses
+        search_type: Type of search to use
+        language: Language for responses ("English", "Hindi", "Assamese")
     
     Returns:
         A function that takes a query and returns (answer, sources, source_docs)
@@ -212,7 +218,7 @@ def get_rag_chain_with_sources(streaming=False, search_type="mmr"):
     retriever = get_optimized_retriever(search_type)
     llm = get_llm(streaming=streaming)
     
-    # Create Prompt
+    # Create Prompt (always in English - translation handled externally)
     system_prompt = (
         "You are 'NPS Bondhu', an official assistant for the National Pension System (NPS). "
         "Use the following pieces of retrieved context to answer the question. "
@@ -222,6 +228,7 @@ def get_rag_chain_with_sources(streaming=False, search_type="mmr"):
         "\n\n"
         "{context}"
     )
+
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
