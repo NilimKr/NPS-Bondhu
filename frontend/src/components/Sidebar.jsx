@@ -62,12 +62,13 @@ const Sidebar = ({ language, setLanguage, isOpen, onClose }) => {
 
             {/* Branding */}
             <div className="px-5 pt-7 pb-5 text-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl
-          bg-gradient-to-br from-blue-500 via-indigo-500 to-blue-600
-          shadow-lg shadow-blue-400/20 mb-3
-          hover:shadow-xl hover:shadow-blue-400/30 hover:scale-105
-          transition-all duration-300">
-                    <Sparkles size={22} className="text-white" />
+                <div className="inline-flex items-center justify-center w-16 h-16 mb-2
+                    hover:scale-105 transition-all duration-300">
+                    <img
+                        src="/nps-logo.svg"
+                        alt="NPS Bondhu Logo"
+                        className="w-full h-full object-contain drop-shadow-sm"
+                    />
                 </div>
                 <h1 className="text-lg font-bold tracking-tight text-slate-800">NPS Bondhu</h1>
                 <p className="text-[11px] text-blue-400/70 tracking-[0.12em] uppercase mt-0.5 font-medium">

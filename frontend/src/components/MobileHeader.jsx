@@ -14,8 +14,8 @@ const MobileHeader = ({ onMenuClick }) => {
                 </button>
 
                 <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                        <span className="text-white text-xs font-bold">N</span>
+                    <div className="w-8 h-8 flex items-center justify-center">
+                        <img src="/nps-logo.svg" alt="NPS Logo" className="w-full h-full object-contain" />
                     </div>
                     <div>
                         <h1 className="font-bold text-sm text-slate-800 leading-tight">NPS Bondhu</h1>

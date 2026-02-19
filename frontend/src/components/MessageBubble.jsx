@@ -29,10 +29,18 @@ const MessageBubble = ({ message }) => {
                 <div
                     className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 ${isUser
                         ? 'bg-blue-600 text-white'
-                        : 'bg-emerald-500 text-white shadow-sm'
+                        : 'bg-transparent' // Remove background for logo
                         }`}
                 >
-                    {isUser ? <User size={14} strokeWidth={2.5} /> : <Bot size={14} strokeWidth={2.5} />}
+                    {isUser ? (
+                        <User size={14} strokeWidth={2.5} />
+                    ) : (
+                        <img
+                            src="/nps-logo.svg"
+                            alt="NPS Bondhu"
+                            className="w-full h-full object-contain drop-shadow-sm"
+                        />
+                    )}
                 </div>
 
                 {/* Bubble + timestamp */}

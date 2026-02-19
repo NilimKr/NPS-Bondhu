@@ -204,11 +204,13 @@ const ChatInterface = ({ language }) => {
                                 initial={{ scale: 0.85, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 transition={{ duration: 0.4, delay: 0.15 }}
-                                className="inline-flex items-center justify-center w-14 h-14 rounded-2xl
-                                  bg-gradient-to-br from-blue-500 via-indigo-500 to-blue-600
-                                  shadow-lg shadow-blue-500/20 mb-5"
+                                className="inline-flex items-center justify-center w-24 h-24 mb-4"
                             >
-                                <Sparkles size={24} className="text-white" />
+                                <img
+                                    src="/nps-logo.svg"
+                                    alt="NPS Bondhu Logo"
+                                    className="w-full h-full object-contain drop-shadow-sm"
+                                />
                             </motion.div>
                             <motion.h1
                                 initial={{ opacity: 0, y: 8 }}
