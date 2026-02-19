@@ -8,4 +8,11 @@ pypdf
 python-dotenv
 reportlab
 deep-translator
+fastapi
+uvicorn
+python-multipart
 langchain-groq
+requests
+beautifulsoup4
+lxml
+gunicorn

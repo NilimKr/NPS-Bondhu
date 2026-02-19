@@ -185,7 +185,7 @@ def get_sources_from_query(query, search_type="mmr"):
 def format_sources_for_display(docs):
     """
     Format source documents for display to user.
-    Returns only the primary source in format: (PDF Name, page - X)
+    Returns only the primary source name (without page number).
     """
     if not docs:
         return ""
@@ -198,10 +198,10 @@ def format_sources_for_display(docs):
     if source_file.lower().endswith('.pdf'):
         source_file = source_file[:-4]
     
-    page = primary_doc.metadata.get('page', 'N/A')
+    # Clean up underscores/hyphens for readability
+    source_name = source_file.replace('_', ' ').replace('-', ' ').strip()
     
-    # Format as: (PDF Name, page - X)
-    return f"({source_file}, page - {page})"
+    return source_name
 
 def get_rag_chain_with_sources(streaming=False, search_type="mmr", language="English"):
     """

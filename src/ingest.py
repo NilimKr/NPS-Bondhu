@@ -1,5 +1,6 @@
+
 import os
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -7,32 +8,49 @@ from langchain_community.vectorstores import FAISS
 DATA_DIR = "data/"
 VECTOR_STORE_DIR = "vector_store/"
 
+def load_documents_from_folder(folder_path):
+    documents = []
+    if not os.path.exists(folder_path):
+        print(f"Folder {folder_path} not found.")
+        return documents
+
+    for root, dirs, files in os.walk(folder_path):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            try:
+                if filename.lower().endswith(".pdf"):
+                    print(f"Loading PDF: {filename}")
+                    loader = PyPDFLoader(file_path)
+                    docs = loader.load()
+                    documents.extend(docs)
+                elif filename.lower().endswith(".txt"):
+                    print(f"Loading Text: {filename}")
+                    loader = TextLoader(file_path, encoding="utf-8")
+                    docs = loader.load()
+                    documents.extend(docs)
+            except Exception as e:
+                print(f"Error loading {filename}: {e}")
+    
+    return documents
+
 def ingest_docs():
     """
-    Loads PDFs from data/ directory, chunks them, and creates a FAISS index.
+    Loads documents from data/ (recursive), chunks them, and creates/updates FAISS index.
     """
-    if not os.path.exists(DATA_DIR):
-        print(f"Directory {DATA_DIR} does not exist.")
-        return
-
-    documents = []
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith(".pdf"):
-            pdf_path = os.path.join(DATA_DIR, filename)
-            loader = PyPDFLoader(pdf_path)
-            docs = loader.load()
-            documents.extend(docs)
-            print(f"Loaded {len(docs)} pages from {filename}")
+    print("Starting ingestion process...")
+    documents = load_documents_from_folder(DATA_DIR)
 
     if not documents:
         print("No documents found to ingest.")
         return
 
-    # Split text - Using smaller chunks for better precision
+    print(f"Total documents loaded: {len(documents)}")
+
+    # Split text - Using smaller chunks for better precision, especially for FAQs
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
-        separators=["\n\n", "\n", " ", ""]
+        chunk_size=800,
+        chunk_overlap=150,
+        separators=["\n\n", "\n", ". ", " ", ""]
     )
     chunks = text_splitter.split_documents(documents)
     print(f"Split documents into {len(chunks)} chunks.")
@@ -42,6 +60,7 @@ def ingest_docs():
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     
     # Create Vector Store
+    # Note: Creating a new one to ensure clean slate with new data structure
     vector_store = FAISS.from_documents(chunks, embeddings)
     
     # Save Index

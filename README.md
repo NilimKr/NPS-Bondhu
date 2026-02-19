@@ -13,7 +13,8 @@ NPS Bondhu is an intelligent virtual assistant that helps NPS (National Pension 
 - ✅ **Multilingual Support** - English, Hindi (हिन्दी), Assamese (অসমীয়া)
 - ✅ **Source Citations** - Every answer includes source references
 - ✅ **Pension Calculator** - Estimate your retirement corpus
-- ✅ **Official Documents** - Powered by 15 official NPS PDFs
+- ✅ **Official Documents** - Powered by official NPS PDFs & FAQs
+- ✅ **Automated Data Scraping** - Keeps knowledge base up-to-date with PFRDA website
 
 ---
 
@@ -33,36 +34,51 @@ GROQ_API_KEY=your_groq_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
 ```
 
-### 3. Ingest Documents (First Time Only)
+### 3. Scrape & Ingest Documents (First Time or Updates)
+To get the latest official documents and build the knowledge base:
+
 ```bash
+# 1. Scrape latest data from NPS Trust/PFRDA
+python3 scripts/scrape_nps_data.py
+
+# 2. Ingest documents into vector store
 python3 src/ingest.py
 ```
-This creates the vector store from PDF documents in the `data/` folder.
+This downloads PDFs and FAQs from official sources into `data/` and creates the vector store.
 
 ### 4. Run the App
+**Frontend (React):**
 ```bash
-streamlit run app.py
+cd frontend
+npm install
+npm run dev
 ```
 
-The app will open in your browser at `http://localhost:8501`
+**Backend (FastAPI):**
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+The app will be available at `http://localhost:5173`
 
 ---
 
 ## 📊 System Architecture
 
 ### RAG Pipeline:
-1. **Document Ingestion** - PDFs → Chunks (500 chars each)
-2. **Embedding** - Text → Vectors (sentence-transformers)
-3. **Vector Store** - FAISS index for fast retrieval
-4. **Retrieval** - MMR search for diverse, relevant chunks
-5. **Generation** - LLM generates answer with source citations
+1. **Data Acquisition** - Automated scrapers fetch PDFs & FAQs from PFRDA/NPS Trust
+2. **Document Ingestion** - PDFs/Text → Chunks (800 chars)
+3. **Embedding** - Text → Vectors (sentence-transformers)
+4. **Vector Store** - FAISS index for fast retrieval
+5. **Retrieval** - MMR search for diverse, relevant chunks
+6. **Generation** - LLM generates answer with source citations
 
 ### Optimizations:
-- ✅ **Smaller chunks** (500 chars) for better precision
-- ✅ **MMR search** for diverse, non-redundant results
-- ✅ **Response caching** for instant repeated queries
-- ✅ **Streaming responses** for better UX
-- ✅ **Source citations** for transparency
+- ✅ **Unified Ingestion**: Handles both PDFs and text files recursively
+- ✅ **Automated Scraping**: Keeps data fresh without manual upload
+- ✅ **Hybrid Content**: Integrates both formal circulars and user-friendly FAQs
+- ✅ **MMR search**: For diverse, non-redundant results
+- ✅ **Source citations**: For transparency
 
 ---
 
@@ -70,16 +86,20 @@ The app will open in your browser at `http://localhost:8501`
 
 ```
 NPS Bondhu/
-├── app.py                      # Main Streamlit application
-├── requirements.txt            # Python dependencies
-├── .env                        # API keys (not in git)
-├── data/                       # PDF documents (15 files)
+├── backend/                    # FastAPI Backend
+│   └── main.py                
+├── frontend/                   # React Frontend
+├── data/                       # Data storage
+│   ├── scraped_pdfs/          # Downloaded PDF documents
+│   └── scraped_text/          # Scraped text content (FAQs)
 ├── vector_store/               # FAISS index (generated)
+├── scripts/
+│   └── scrape_nps_data.py     # Automated data scraper
 ├── src/
-│   ├── ingest.py              # Document processing
+│   ├── ingest.py              # Document processing pipeline
 │   ├── rag_chain.py           # RAG implementation
 │   └── calculator.py          # Pension calculator
-├── .backups/                   # Old versions (safe to delete)
+├── requirements.txt            # Python dependencies
 └── README.md                   # This file
 ```
 
@@ -87,18 +107,13 @@ NPS Bondhu/
 
 ## 📚 Data Sources
 
-The system uses **15 official NPS documents** from PFRDA:
+The system automatically scrapes and indexes:
+1.  **Circulars** from NPS Trust
+2.  **Acts & Regulations** from NPS Trust
+3.  **FAQs** (Text & PDFs) from NPS Trust
+4.  **Official Gazettes**
 
-| Document | Type | Chunks |
-|----------|------|--------|
-| Glossary final for approval | Reference | 172 |
-| FAQs on UPS for Subscriber | FAQ | 67 |
-| Exit guides (5 files) | Guide | 197 |
-| APY.pdf | Guide | 45 |
-| NPS-All citizen Model | Guide | 36 |
-| Other FAQs (4 files) | FAQ | 70 |
-
-**Total:** 1,190 chunks covering all aspects of NPS
+**Total Knowledge Base:** Dynamically updated from official sources.
 
 ---
 
@@ -109,7 +124,6 @@ The system uses **15 official NPS documents** from PFRDA:
 - Streaming responses
 - Source citations with every answer
 - Configurable search strategies (MMR/Similarity/Threshold)
-- Debug mode for testing
 
 ### 2. Pension Calculator
 - Estimate retirement corpus
@@ -121,85 +135,6 @@ The system uses **15 official NPS documents** from PFRDA:
 - **Languages:** English, Hindi (हिन्दी), Assamese (অসমীয়া)
 - **Auto-Translation:** Queries are translated to English for processing, then answers are translated back
 - **UI Localization:** Interface elements adapt to selected language
-- **Transparent:** Source citations remain in English (original source)
-
----
-
-## ⚙️ Configuration
-
-### Search Strategies:
-- **MMR** (default): Balanced similarity + diversity
-- **Similarity**: Pure similarity search
-- **Similarity Score Threshold**: Only high-quality matches (>0.7)
-
-### Performance Settings:
-```python
-# In src/rag_chain.py
-RETRIEVAL_CONFIG = {
-    "k": 5,                    # Retrieve 5 chunks
-    "fetch_k": 10,             # Fetch 10 for MMR
-    "score_threshold": 0.7,    # Min similarity
-    "lambda_mult": 0.7,        # MMR diversity
-}
-```
-
----
-
-## 📈 Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| **Retrieval Precision** | ~85% |
-| **Response Time (new)** | 2-3s |
-| **Response Time (cached)** | 0.1s |
-| **Chunks Retrieved** | 5 per query |
-| **Total Chunks** | 1,190 |
-| **Chunk Size** | 500 chars |
-
----
-
-## 🧪 Testing
-
-### Test Queries:
-```python
-# Simple factual
-"What is PRAN?"
-
-# Complex process
-"How do I exit NPS before retirement?"
-
-# Specific regulation
-"What is the minimum contribution?"
-
-# Tax benefits
-"Tell me about tax benefits of NPS"
-```
-
-### Debug Mode:
-Enable in sidebar to see:
-- Retrieval scores
-- Source documents
-- Similarity scores
-- Performance metrics
-
----
-
-## 🔧 Troubleshooting
-
-### "Vector store not found"
-**Solution:** Run `python3 src/ingest.py` to create the index
-
-### Slow responses
-**Solutions:**
-1. Enable streaming in sidebar
-2. Check internet connection
-3. Try Groq API instead of Gemini
-
-### Inaccurate answers
-**Solutions:**
-1. Check source citations
-2. Try different search strategy
-3. Enable debug mode to see retrieval scores
 
 ---
 
@@ -217,45 +152,17 @@ Enable in sidebar to see:
 
 ---
 
-## 🎯 Roadmap
-
-### Completed ✅
-- [x] RAG system with official documents
-- [x] Pension calculator
-- [x] Source citations
-- [x] Optimized retrieval (MMR, caching, streaming)
-- [x] Streamlit web interface
-- [x] Multilingual support (Hindi, Assamese)
-
-### Coming Soon 🚧
-- [ ] Voice input/output
-- [ ] PDF export of conversations
-- [ ] User authentication
-- [ ] Analytics dashboard
-
----
-
 ## 📄 License
 
 This is a prototype/demo application. Official NPS information should always be verified with PFRDA.
 
 ---
 
-## 🆘 Support
-
-For issues or questions:
-1. Check `DATA_QUALITY_REPORT.md` for data quality info
-2. Check `OPTIMIZATION_SUMMARY.md` for optimization details
-3. Enable Debug Mode in the app
-4. Check `.backups/` folder for old versions
-
----
-
 ## 🙏 Acknowledgments
 
-- **PFRDA** for official NPS documents
+- **PFRDA/NPS Trust** for official NPS documents
 - **LangChain** for RAG framework
-- **Streamlit** for web interface
+- **FastAPI & React** for full-stack architecture
 - **Groq/Google** for LLM APIs
 - **Sentence Transformers** for embeddings
 
@@ -263,5 +170,5 @@ For issues or questions:
 
 **Built with ❤️ for NPS subscribers**
 
-**Version:** 2.1 (Multilingual Update)  
+**Version:** 3.0 (Full Stack & Automated Data)  
 **Last Updated:** February 19, 2026
