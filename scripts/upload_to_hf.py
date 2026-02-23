@@ -3,9 +3,18 @@ Upload NPS Bondhu backend files to HuggingFace Space using the huggingface_hub A
 This correctly handles binary files (FAISS index) that git push rejects.
 """
 from huggingface_hub import HfApi
+from dotenv import load_dotenv
 import os
+import sys
 
-TOKEN = "REDACTED_HF_TOKEN"
+# Load environment variables from the .env file at project root
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+
+TOKEN = os.environ.get("HF_TOKEN")
+if not TOKEN:
+    print("❌ HF_TOKEN not found! Add it to your .env file (e.g. HF_TOKEN=hf_xxx...)")
+    sys.exit(1)
+
 REPO_ID = "NilimKr/nps-bondhu-backend"
 REPO_TYPE = "space"
 
