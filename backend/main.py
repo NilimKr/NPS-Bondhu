@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from groq import Groq
 from src.rag_chain import get_rag_chain_with_sources, get_sources_from_query, format_sources_for_display
 from src.translator import translate_to_english, translate_from_english
 
@@ -54,6 +55,38 @@ async def chat_endpoint(request: ChatRequest):
         )
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/transcribe")
+async def transcribe_endpoint(
+    file: UploadFile = File(...),
+    language: str = Form("en")
+):
+    try:
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            raise HTTPException(status_code=500, detail="GROQ_API_KEY is not set")
+
+        client = Groq(api_key=groq_api_key)
+        audio_content = await file.read()
+
+        lang_code = language.lower().strip()
+        if lang_code not in ("as", "hi", "en"):
+            lang_code = "en"
+
+        filename = file.filename or "recording.webm"
+        if not filename.endswith((".webm", ".wav", ".mp3", ".m4a", ".ogg")):
+            filename += ".webm"
+
+        transcription = client.audio.transcriptions.create(
+            file=(filename, audio_content),
+            model="whisper-large-v3",
+            language=lang_code,
+            response_format="json"
+        )
+        return {"text": transcription.text.strip()}
+    except Exception as e:
+        print(f"Transcription error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

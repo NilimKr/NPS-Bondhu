@@ -40,11 +40,14 @@ const ChatInterface = ({ language }) => {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
     const [voiceNotice, setVoiceNotice] = useState(null);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const recognitionRef = useRef(null);
     const silenceTimerRef = useRef(null);
+    const mediaRecorderRef = useRef(null);
+    const audioStreamRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -77,6 +80,14 @@ const ChatInterface = ({ language }) => {
                 recognitionRef.current.abort();
                 recognitionRef.current = null;
             }
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                try { mediaRecorderRef.current.stop(); } catch (e) {}
+                mediaRecorderRef.current = null;
+            }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach((t) => t.stop());
+                audioStreamRef.current = null;
+            }
         };
     }, [language]);
 
@@ -88,32 +99,184 @@ const ChatInterface = ({ language }) => {
         if (recognitionRef.current) {
             try {
                 recognitionRef.current.stop();
-            } catch (e) {
-                // Ignore already stopped error
-            }
+            } catch (e) {}
             recognitionRef.current = null;
+        }
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            try {
+                mediaRecorderRef.current.stop();
+            } catch (e) {}
+            mediaRecorderRef.current = null;
+        }
+        if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach((t) => t.stop());
+            audioStreamRef.current = null;
         }
         setIsListening(false);
     }, []);
 
+    // ---------- Whisper Audio Recording for Assamese & Fallback ----------
+    const startWhisperRecording = useCallback(async (targetLang = 'as') => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStreamRef.current = stream;
+
+            const audioChunks = [];
+            let mimeType = '';
+            if (MediaRecorder.isTypeSupported('audio/webm')) {
+                mimeType = 'audio/webm';
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                mimeType = 'audio/mp4';
+            }
+
+            const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            let checkInterval = null;
+            let silenceTimer = null;
+            let hasSpoken = false;
+
+            const existingText = input;
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    audioChunks.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstart = () => {
+                setIsListening(true);
+                setVoiceNotice({
+                    type: 'info',
+                    msg: targetLang === 'as' 
+                        ? 'Listening in Assamese... (কওক, কৈ শেষ কৰিলে নিজে বন্ধ হ’ব)'
+                        : 'Listening... (Speak now)'
+                });
+
+                // Auto stop if user says nothing for 8 seconds
+                silenceTimer = setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, 8000);
+
+                checkInterval = setInterval(() => {
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const avg = sum / dataArray.length;
+
+                    if (avg > 15) {
+                        hasSpoken = true;
+                        if (silenceTimer) {
+                            clearTimeout(silenceTimer);
+                            silenceTimer = null;
+                        }
+                    } else if (hasSpoken) {
+                        if (!silenceTimer) {
+                            silenceTimer = setTimeout(() => {
+                                if (mediaRecorder.state === 'recording') {
+                                    mediaRecorder.stop();
+                                }
+                            }, 1800);
+                        }
+                    }
+                }, 100);
+            };
+
+            mediaRecorder.onstop = async () => {
+                clearInterval(checkInterval);
+                if (silenceTimer) clearTimeout(silenceTimer);
+                stream.getTracks().forEach((track) => track.stop());
+                try { audioCtx.close(); } catch (e) {}
+                setIsListening(false);
+                setVoiceNotice(null);
+
+                if (audioChunks.length === 0) return;
+
+                const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                if (blob.size < 1000) return;
+
+                setIsTranscribing(true);
+                setVoiceNotice({
+                    type: 'info',
+                    msg: 'Processing voice with Groq Whisper...'
+                });
+
+                try {
+                    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+                    const formData = new FormData();
+                    formData.append('file', blob, 'audio.webm');
+                    formData.append('language', targetLang);
+
+                    const response = await axios.post(`${apiBaseUrl}/transcribe`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' },
+                    });
+
+                    if (response.data && response.data.text) {
+                        const transcribed = response.data.text.trim();
+                        const prefix = existingText ? existingText + ' ' : '';
+                        setInput(prefix + transcribed);
+                    }
+                    setVoiceNotice(null);
+                } catch (err) {
+                    console.error('Transcription error:', err);
+                    setVoiceNotice({
+                        type: 'error',
+                        msg: 'Voice transcription failed. Please try speaking again or type your question.'
+                    });
+                } finally {
+                    setIsTranscribing(false);
+                    inputRef.current?.focus();
+                }
+            };
+
+            mediaRecorder.start(250);
+        } catch (err) {
+            console.error('Microphone error:', err);
+            setIsListening(false);
+            setVoiceNotice({
+                type: 'error',
+                msg: 'Microphone permission denied. Please allow microphone access in your browser.'
+            });
+        }
+    }, [input]);
+
     // ---------- Voice Input Logic ----------
     const toggleVoiceInput = useCallback(() => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-        if (!SpeechRecognition) {
-            alert('Your browser does not support voice input. Please use Google Chrome or Edge.');
-            return;
-        }
-
-        // If already listening, stop
-        if (isListening) {
+        // If already listening or transcribing, stop
+        if (isListening || isTranscribing) {
             stopVoiceInput();
             return;
         }
 
         setVoiceNotice(null);
 
-        const startRecognitionInstance = (targetLang, isFallback = false) => {
+        // Assamese is not supported by browser Web Speech API servers (Chrome/Edge/Safari)
+        // Use Groq Whisper directly for native Assamese speech recognition!
+        if (language === 'as') {
+            startWhisperRecording('as');
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+            // Fallback to Groq Whisper if browser does not support SpeechRecognition
+            startWhisperRecording(language);
+            return;
+        }
+
+        const startRecognitionInstance = (targetLang) => {
             const recognition = new SpeechRecognition();
             recognition.lang = targetLang;
             recognition.interimResults = true;
@@ -124,7 +287,6 @@ const ChatInterface = ({ language }) => {
 
             recognition.onstart = () => {
                 setIsListening(true);
-                // Auto-stop if user says nothing for 8 seconds
                 if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
                 silenceTimerRef.current = setTimeout(() => {
                     stopVoiceInput();
@@ -132,7 +294,6 @@ const ChatInterface = ({ language }) => {
             };
 
             recognition.onresult = (event) => {
-                // Clear pending silence timer whenever speech is detected
                 if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
                 let interim = '';
@@ -146,11 +307,9 @@ const ChatInterface = ({ language }) => {
                     }
                 }
 
-                // Append to existing text in input
                 const prefix = existingText ? existingText + ' ' : '';
                 setInput(prefix + finalTranscript + interim);
 
-                // Auto stop after 1.5 seconds of silence (or 1.2s if final result received)
                 silenceTimerRef.current = setTimeout(() => {
                     stopVoiceInput();
                 }, finalTranscript ? 1200 : 1800);
@@ -161,30 +320,19 @@ const ChatInterface = ({ language }) => {
                 if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
                 if (event.error === 'language-not-supported') {
-                    if (targetLang === 'as-IN' && !isFallback) {
-                        // Desktop Chrome does not support as-IN; fall back to bn-IN (same Eastern Nagari script)
-                        setVoiceNotice(
-                            language === 'as'
-                                ? 'ব্ৰাউজাৰত as-IN সমৰ্থন নকৰাৰ বাবে আঞ্চলিক ভইচ ইনপুট ব্যৱহাৰ কৰা হৈছে।'
-                                : 'Assamese voice is not supported natively by this browser. Switched to regional phonetic input.'
-                        );
-                        startRecognitionInstance('bn-IN', true);
-                        return;
-                    } else {
-                        setVoiceNotice(
-                            language === 'as'
-                                ? 'আপোনাৰ ব্ৰাউজাৰত অসমীয়া ভইচ ইনপুট উপলব্ধ নহয়। অনুগ্ৰহ কৰি টাইপ কৰক।'
-                                : 'Voice input for this language is not supported by your browser. Please type your query.'
-                        );
-                    }
+                    // Fall back to Whisper on language not supported
+                    startWhisperRecording(language);
+                    return;
                 } else if (event.error === 'not-allowed') {
-                    setVoiceNotice(
-                        language === 'as'
-                            ? 'মাইক্ৰ’ফোনৰ অনুমতি দিয়া হোৱা নাই। অনুগ্ৰহ কৰি ব্ৰাউজাৰত অনুমতি দিয়ক।'
-                            : 'Microphone permission denied. Please allow microphone access in browser settings.'
-                    );
+                    setVoiceNotice({
+                        type: 'error',
+                        msg: 'Microphone permission denied. Please allow microphone access in browser settings.'
+                    });
                 } else if (event.error !== 'no-speech') {
-                    setVoiceNotice(`Voice error: ${event.error}`);
+                    setVoiceNotice({
+                        type: 'error',
+                        msg: `Voice error: ${event.error}`
+                    });
                 }
 
                 setIsListening(false);
@@ -210,7 +358,7 @@ const ChatInterface = ({ language }) => {
 
         const initialLang = SPEECH_LANG[language] || 'en-IN';
         startRecognitionInstance(initialLang);
-    }, [isListening, language, input, stopVoiceInput]);
+    }, [isListening, isTranscribing, language, input, stopVoiceInput, startWhisperRecording]);
 
     const sendMessage = async (text) => {
         if (!text.trim() || isLoading) return;
@@ -421,18 +569,27 @@ const ChatInterface = ({ language }) => {
                                 <button
                                     type="button"
                                     onClick={toggleVoiceInput}
-                                    disabled={isLoading}
-                                    className={`absolute right-3 top-1/2 -translate-y-1/2 transition-all duration-200 ${isListening
-                                        ? 'text-red-500 hover:text-red-600'
-                                        : 'text-slate-400 hover:text-slate-600'
-                                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                    title={isListening ? 'Stop listening' : 'Voice input'}
+                                    disabled={isLoading || isTranscribing}
+                                    className={`absolute right-3 top-1/2 -translate-y-1/2 transition-all duration-200 ${
+                                        isTranscribing
+                                            ? 'text-blue-500'
+                                            : isListening
+                                            ? 'text-red-500 hover:text-red-600'
+                                            : 'text-slate-400 hover:text-slate-600'
+                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    title={isTranscribing ? 'Transcribing...' : isListening ? 'Stop listening' : 'Voice input'}
                                 >
                                     {/* Pulse ring when listening */}
                                     {isListening && (
                                         <span className="absolute inset-0 -m-1.5 rounded-full border-2 border-red-400 animate-ping opacity-50" />
                                     )}
-                                    {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                                    {isTranscribing ? (
+                                        <Loader2 size={16} className="animate-spin text-blue-500" />
+                                    ) : isListening ? (
+                                        <MicOff size={16} />
+                                    ) : (
+                                        <Mic size={16} />
+                                    )}
                                 </button>
                             </div>
 
