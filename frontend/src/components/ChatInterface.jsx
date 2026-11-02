@@ -132,16 +132,51 @@ const ChatInterface = ({ language }) => {
             const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
 
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            let audioCtx = null;
             let checkInterval = null;
             let silenceTimer = null;
             let hasSpoken = false;
+
+            try {
+                const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtxClass) {
+                    audioCtx = new AudioCtxClass();
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    const analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    checkInterval = setInterval(() => {
+                        try {
+                            analyser.getByteFrequencyData(dataArray);
+                            let sum = 0;
+                            for (let i = 0; i < dataArray.length; i++) {
+                                sum += dataArray[i];
+                            }
+                            const avg = sum / dataArray.length;
+
+                            if (avg > 15) {
+                                hasSpoken = true;
+                                if (silenceTimer) {
+                                    clearTimeout(silenceTimer);
+                                    silenceTimer = null;
+                                }
+                            } else if (hasSpoken) {
+                                if (!silenceTimer) {
+                                    silenceTimer = setTimeout(() => {
+                                        if (mediaRecorder.state === 'recording') {
+                                            mediaRecorder.stop();
+                                        }
+                                    }, 1800);
+                                }
+                            }
+                        } catch (e) {}
+                    }, 100);
+                }
+            } catch (e) {
+                console.warn('AudioContext volume detection unavailable:', e);
+            }
 
             const existingText = input;
 
@@ -166,31 +201,6 @@ const ChatInterface = ({ language }) => {
                         mediaRecorder.stop();
                     }
                 }, 8000);
-
-                checkInterval = setInterval(() => {
-                    analyser.getByteFrequencyData(dataArray);
-                    let sum = 0;
-                    for (let i = 0; i < dataArray.length; i++) {
-                        sum += dataArray[i];
-                    }
-                    const avg = sum / dataArray.length;
-
-                    if (avg > 15) {
-                        hasSpoken = true;
-                        if (silenceTimer) {
-                            clearTimeout(silenceTimer);
-                            silenceTimer = null;
-                        }
-                    } else if (hasSpoken) {
-                        if (!silenceTimer) {
-                            silenceTimer = setTimeout(() => {
-                                if (mediaRecorder.state === 'recording') {
-                                    mediaRecorder.stop();
-                                }
-                            }, 1800);
-                        }
-                    }
-                }, 100);
             };
 
             mediaRecorder.onstop = async () => {
@@ -536,12 +546,16 @@ const ChatInterface = ({ language }) => {
                 {/* Voice Input Notice / Fallback Banner */}
                 {voiceNotice && (
                     <div className="max-w-2xl mx-auto px-4 md:px-6 pb-2">
-                        <div className="text-[12px] px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/80 text-blue-700 flex items-center justify-between shadow-sm animate-fade-in">
-                            <span>{voiceNotice}</span>
+                        <div className={`text-[12px] px-3 py-1.5 rounded-xl border flex items-center justify-between shadow-sm animate-fade-in ${
+                            typeof voiceNotice === 'object' && voiceNotice?.type === 'error'
+                                ? 'bg-rose-50/90 border-rose-200/80 text-rose-700'
+                                : 'bg-blue-50/90 border-blue-200/80 text-blue-700'
+                        }`}>
+                            <span>{typeof voiceNotice === 'object' ? voiceNotice?.msg : String(voiceNotice)}</span>
                             <button
                                 type="button"
                                 onClick={() => setVoiceNotice(null)}
-                                className="ml-2 text-blue-400 hover:text-blue-700 font-bold text-sm leading-none"
+                                className="ml-2 text-slate-400 hover:text-slate-700 font-bold text-sm leading-none"
                             >
                                 ×
                             </button>
