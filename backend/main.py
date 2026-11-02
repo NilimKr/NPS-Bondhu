@@ -34,25 +34,22 @@ class ChatResponse(BaseModel):
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # Translate to English if needed
+        # Translate to English for vector search if needed
         query_in_english = translate_to_english(request.message, request.language)
         
-        # Get response from RAG chain
+        # Get response from RAG chain with user requested language
         rag_chain_func = get_rag_chain_with_sources(
             streaming=False,
-            search_type="mmr", # Defaulting to MMR
-            language="English"
+            search_type="mmr",
+            language=request.language
         )
         
         result = rag_chain_func({"input": query_in_english})
         answer = result["answer"]
         sources_raw = result["sources"]
         
-        # Translate back to requested language
-        answer_translated = translate_from_english(answer, request.language)
-        
         return ChatResponse(
-            answer=answer_translated,
+            answer=answer,
             sources=str(sources_raw) if sources_raw else ""
         )
 

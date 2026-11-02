@@ -113,6 +113,28 @@ def get_llm(streaming=False):
     
     return llm
 
+def get_language_instructions(language):
+    """Generate language-specific response and fallback instructions."""
+    lang = (language or "en").lower().strip()
+    if lang in ("hi", "hindi"):
+        return (
+            "Language instruction: Provide your answer clearly and naturally in Hindi (हिन्दी) using Devanagari script. "
+            "If the answer cannot be found in the context, respond in Hindi: "
+            "'मुझे खेद है, लेकिन मुझे आधिकारिक एनपीएस (NPS) दस्तावेजों में यह जानकारी नहीं मिली।'"
+        )
+    elif lang in ("as", "assamese"):
+        return (
+            "Language instruction: Provide your answer clearly and naturally in Assamese (অসমীয়া script). "
+            "If the answer cannot be found in the context, respond in Assamese: "
+            "'মই দুঃখিত, কিন্তু অফিচিয়েল NPS নথিসমূহত মই এই তথ্য বিচাৰি নাপালোঁ।'"
+        )
+    else:
+        return (
+            "Language instruction: Provide your answer clearly in English. "
+            "If the answer cannot be found in the context, respond in English: "
+            "'I am sorry, but I cannot find this information in the official NPS documents.'"
+        )
+
 def get_rag_chain(streaming=False, search_type="mmr", language="English"):
     """
     Initializes and returns an optimized RAG chain using LCEL.
@@ -136,14 +158,14 @@ def get_rag_chain(streaming=False, search_type="mmr", language="English"):
     # Get LLM with streaming support
     llm = get_llm(streaming=streaming)
 
-    # Create Prompt (always in English - translation handled externally)
+    # Create Prompt with language instruction
+    lang_inst = get_language_instructions(language)
     system_prompt = (
         "You are 'NPS Bondhu', an official assistant for the National Pension System (NPS). "
         "Use the following pieces of retrieved context to answer the question. "
-        "If the answer is not in the context, say 'I am sorry, but I cannot find this information in the official NPS documents.' "
         "Do not make up answers. Keep the answer concise and helpful. "
         "If multiple sources provide similar information, synthesize them into a coherent answer. "
-        "\n\n"
+        f"{lang_inst}\n\n"
         "{context}"
     )
 
@@ -210,17 +232,16 @@ def get_rag_chain_with_sources(streaming=False, search_type="mmr", language="Eng
     retriever = get_optimized_retriever(search_type)
     llm = get_llm(streaming=streaming)
     
-    # Create Prompt (always in English - translation handled externally)
+    # Create Prompt with language instruction
+    lang_inst = get_language_instructions(language)
     system_prompt = (
         "You are 'NPS Bondhu', an official assistant for the National Pension System (NPS). "
         "Use the following pieces of retrieved context to answer the question. "
-        "If the answer is not in the context, say 'I am sorry, but I cannot find this information in the official NPS documents.' "
         "Do not make up answers. Keep the answer concise and helpful. "
         "If multiple sources provide similar information, synthesize them into a coherent answer. "
-        "\n\n"
+        f"{lang_inst}\n\n"
         "{context}"
     )
-
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),

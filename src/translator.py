@@ -22,6 +22,29 @@ def get_cache_key(text, source_lang, target_lang):
     combined = f"{text}_{source_lang}_{target_lang}"
     return hashlib.md5(combined.encode()).hexdigest()
 
+def _llm_translate(text, source_lang_code, target_lang_code):
+    """Fallback translation using Groq LLM when Google Translate fails/rate-limits."""
+    try:
+        from src.rag_chain import get_llm
+        llm = get_llm()
+        lang_names = {
+            "en": "English",
+            "hi": "Hindi",
+            "as": "Assamese"
+        }
+        src = lang_names.get(source_lang_code, source_lang_code)
+        tgt = lang_names.get(target_lang_code, target_lang_code)
+        
+        prompt = (
+            f"You are a professional translator. Translate the following text from {src} to {tgt}. "
+            f"Output ONLY the translated text without explanations, greetings, quotes, or markdown tags:\n\n{text}"
+        )
+        res = llm.invoke(prompt)
+        return res.content.strip().strip('"').strip("'")
+    except Exception as e:
+        print(f"LLM translation error: {e}")
+        return text
+
 def translate_to_english(text, source_lang_code):
     """
     Translate text from source language to English.
@@ -34,7 +57,7 @@ def translate_to_english(text, source_lang_code):
         Translated text in English
     """
     # If already English, return as-is
-    if source_lang_code == "en":
+    if not source_lang_code or source_lang_code == "en":
         return text
     
     # Check cache
@@ -46,14 +69,14 @@ def translate_to_english(text, source_lang_code):
         # Translate to English
         translator = GoogleTranslator(source=source_lang_code, target="en")
         translated_text = translator.translate(text)
-        
-        # Cache the result
         _translation_cache[cache_key] = translated_text
-        
         return translated_text
     except Exception as e:
-        print(f"Translation error (to English): {e}")
-        # Fallback: return original text
+        print(f"GoogleTranslator error (to English): {e}. Falling back to Groq LLM...")
+        llm_translated = _llm_translate(text, source_lang_code, "en")
+        if llm_translated:
+            _translation_cache[cache_key] = llm_translated
+            return llm_translated
         return text
 
 def translate_from_english(text, target_lang_code):
@@ -68,7 +91,7 @@ def translate_from_english(text, target_lang_code):
         Translated text in target language
     """
     # If target is English, return as-is
-    if target_lang_code == "en":
+    if not target_lang_code or target_lang_code == "en":
         return text
     
     # Check cache
@@ -80,14 +103,14 @@ def translate_from_english(text, target_lang_code):
         # Translate from English
         translator = GoogleTranslator(source="en", target=target_lang_code)
         translated_text = translator.translate(text)
-        
-        # Cache the result
         _translation_cache[cache_key] = translated_text
-        
         return translated_text
     except Exception as e:
-        print(f"Translation error (from English): {e}")
-        # Fallback: return original text
+        print(f"GoogleTranslator error (from English): {e}. Falling back to Groq LLM...")
+        llm_translated = _llm_translate(text, "en", target_lang_code)
+        if llm_translated:
+            _translation_cache[cache_key] = llm_translated
+            return llm_translated
         return text
 
 def translate_query_and_response(query, response, user_lang_code):
