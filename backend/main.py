@@ -127,7 +127,7 @@ async def transcribe_endpoint(
 
         segments = getattr(transcription, "segments", []) or []
         # If all segments indicate high probability of no speech, reject as silence
-        if segments and all(s.get("no_speech_prob", 0) > 0.4 for s in segments):
+        if segments and all(s.get("no_speech_prob", 0) > 0.65 for s in segments):
             print(f"Filtered out silence based on no_speech_prob (avg: {sum(s.get('no_speech_prob', 0) for s in segments)/len(segments):.2f})")
             return {"text": ""}
 

@@ -96,12 +96,6 @@ const ChatInterface = ({ language }) => {
             clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = null;
         }
-        if (recognitionRef.current) {
-            try {
-                recognitionRef.current.stop();
-            } catch (e) {}
-            recognitionRef.current = null;
-        }
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             try {
                 mediaRecorderRef.current.stop();
@@ -110,31 +104,30 @@ const ChatInterface = ({ language }) => {
         setIsListening(false);
     }, []);
 
-    // ---------- Whisper Audio Recording for Assamese & Fallback ----------
+    // ---------- Unified Whisper Audio Recording for Assamese, Hindi & English ----------
     const startWhisperRecording = useCallback(async (targetLang = 'as') => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioStreamRef.current = stream;
 
             const audioChunks = [];
-            let mimeType = 'audio/webm;codecs=opus';
+            let mimeType = '';
             let fileExt = 'webm';
 
-            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-                mimeType = 'audio/webm;codecs=opus';
-                fileExt = 'webm';
-            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-                mimeType = 'audio/webm';
-                fileExt = 'webm';
-            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-                mimeType = 'audio/mp4';
-                fileExt = 'mp4';
-            } else if (MediaRecorder.isTypeSupported('audio/aac')) {
-                mimeType = 'audio/aac';
-                fileExt = 'aac';
-            } else {
-                mimeType = '';
-                fileExt = 'wav';
+            if (typeof MediaRecorder !== 'undefined') {
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                    fileExt = 'webm';
+                } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                    fileExt = 'webm';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4';
+                    fileExt = 'mp4';
+                } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+                    mimeType = 'audio/aac';
+                    fileExt = 'aac';
+                }
             }
 
             const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -142,15 +135,17 @@ const ChatInterface = ({ language }) => {
 
             let audioCtx = null;
             let checkInterval = null;
-            let silenceTimer = null;
-            let speechDetected = false;
+            let hasSpoken = false;
             let silenceStartTime = null;
 
-            // Accurate voice activity detection using PCM time-domain amplitude
+            // Optional Voice Activity Detection (VAD) for auto-stop after user finishes speaking
             try {
                 const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
                 if (AudioCtxClass) {
                     audioCtx = new AudioCtxClass();
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume().catch(() => {});
+                    }
                     const source = audioCtx.createMediaStreamSource(stream);
                     const analyser = audioCtx.createAnalyser();
                     analyser.fftSize = 512;
@@ -166,19 +161,14 @@ const ChatInterface = ({ language }) => {
                                 if (dev > maxDev) maxDev = dev;
                             }
 
-                            // Normal human voice deviation easily exceeds 10; ambient room silence is ~0-3
-                            if (maxDev > 10) {
-                                speechDetected = true;
+                            if (maxDev > 8) {
+                                hasSpoken = true;
                                 silenceStartTime = null;
-                                if (silenceTimer) {
-                                    clearTimeout(silenceTimer);
-                                    silenceTimer = null;
-                                }
-                            } else if (speechDetected) {
+                            } else if (hasSpoken) {
                                 if (!silenceStartTime) {
                                     silenceStartTime = Date.now();
-                                } else if (Date.now() - silenceStartTime > 1300) {
-                                    // 1.3 seconds of silence after speaking: auto-stop recording!
+                                } else if (Date.now() - silenceStartTime > 1600) {
+                                    // Auto-stop after 1.6s pause following speech
                                     if (mediaRecorder.state === 'recording') {
                                         mediaRecorder.stop();
                                     }
@@ -188,7 +178,7 @@ const ChatInterface = ({ language }) => {
                     }, 100);
                 }
             } catch (e) {
-                console.warn('AudioContext volume detection unavailable:', e);
+                console.warn('VAD unavailable, relying on manual stop / timeout:', e);
             }
 
             const existingText = input;
@@ -201,50 +191,59 @@ const ChatInterface = ({ language }) => {
 
             mediaRecorder.onstart = () => {
                 setIsListening(true);
+                const noticeMsg = targetLang === 'as'
+                    ? '🎙️ শুনি আছোঁ... (কওক, শেষ হ’লে মাইকত ক্লিক কৰক)'
+                    : targetLang === 'hi'
+                    ? '🎙️ सुन रहा हूँ... (बोलें, पूरा होने पर माइक पर क्लिक करें)'
+                    : '🎙️ Listening... (Speak now, click mic when done)';
+
                 setVoiceNotice({
                     type: 'info',
-                    msg: targetLang === 'as' 
-                        ? '🎙️ শুনি আছোঁ... (কওক, কৈ শেষ কৰিলে নিজে বন্ধ হ’ব)'
-                        : '🎙️ Listening... (Speak now, stops automatically when you pause)'
+                    msg: noticeMsg
                 });
 
-                // Auto stop if user says nothing for 7 seconds
-                silenceTimer = setTimeout(() => {
+                // Auto stop after 9 seconds of recording
+                silenceTimerRef.current = setTimeout(() => {
                     if (mediaRecorder.state === 'recording') {
                         mediaRecorder.stop();
                     }
-                }, 7000);
+                }, 9000);
             };
 
             mediaRecorder.onstop = async () => {
-                clearInterval(checkInterval);
-                if (silenceTimer) clearTimeout(silenceTimer);
+                if (checkInterval) clearInterval(checkInterval);
+                if (silenceTimerRef.current) {
+                    clearTimeout(silenceTimerRef.current);
+                    silenceTimerRef.current = null;
+                }
                 stream.getTracks().forEach((track) => track.stop());
-                try { audioCtx.close(); } catch (e) {}
+                try { audioCtx?.close(); } catch (e) {}
                 setIsListening(false);
 
-                // If user didn't speak audibly, don't send silence to Whisper
-                if (!speechDetected) {
+                if (audioChunks.length === 0) {
+                    setVoiceNotice(null);
+                    return;
+                }
+
+                const actualMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+                const blob = new Blob(audioChunks, { type: actualMime });
+
+                if (blob.size < 400) {
                     setVoiceNotice({
                         type: 'info',
                         msg: targetLang === 'as'
-                            ? 'কোনো মাত শুনা নগ’ল। অনুগ্ৰহ কৰি মাইক্ৰ’ফোনৰ ওচৰত স্পষ্টকৈ কওক।'
-                            : 'No voice detected. Please speak closer to your microphone.'
+                            ? 'ৰেৰ্কডিং অতি চুটি হ’ল। অনুগ্ৰহ কৰি আকৌ কওক।'
+                            : 'Recording too short. Please try again.'
                     });
                     setTimeout(() => setVoiceNotice(null), 3000);
                     return;
                 }
 
-                if (audioChunks.length === 0) return;
-
-                const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || mimeType });
-                if (blob.size < 800) return;
-
                 setIsTranscribing(true);
                 setVoiceNotice({
                     type: 'info',
-                    msg: targetLang === 'as' 
-                        ? 'মাত প্ৰক্ৰিয়াকৰণ কৰা হৈছে...' 
+                    msg: targetLang === 'as'
+                        ? 'মাত প্ৰক্ৰিয়াকৰণ কৰা হৈছে...'
                         : 'Transcribing speech with Whisper...'
                 });
 
@@ -267,10 +266,12 @@ const ChatInterface = ({ language }) => {
                         setVoiceNotice({
                             type: 'info',
                             msg: targetLang === 'as'
-                                ? 'মাত স্পষ্ট নহ’ল। অনুগ্ৰহ কৰি আকৌ কওক।'
-                                : 'Could not clearly recognize speech. Please try speaking again.'
+                                ? 'কোনো মাত স্পষ্টকৈ ধৰিব পৰা নগ’ল। অনুগ্ৰহ কৰি মাইকৰ ওচৰত কওক।'
+                                : targetLang === 'hi'
+                                ? 'आवाज़ स्पष्ट नहीं थी। कृपया माइक के पास साफ़ बोलें।'
+                                : 'Could not recognize speech clearly. Please speak closer to your mic.'
                         });
-                        setTimeout(() => setVoiceNotice(null), 3000);
+                        setTimeout(() => setVoiceNotice(null), 3500);
                     }
                 } catch (err) {
                     console.error('Transcription error:', err);
@@ -306,114 +307,8 @@ const ChatInterface = ({ language }) => {
         }
 
         setVoiceNotice(null);
-
-        // Assamese is not supported by standard browser SpeechRecognition engines
-        // Use Groq Whisper directly for high-quality Assamese speech recognition
-        if (language === 'as') {
-            startWhisperRecording('as');
-            return;
-        }
-
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-        if (!SpeechRecognition) {
-            // Fallback to Groq Whisper if browser does not support SpeechRecognition
-            startWhisperRecording(language);
-            return;
-        }
-
-        const startRecognitionInstance = (targetLang) => {
-            const recognition = new SpeechRecognition();
-            recognition.lang = targetLang;
-            recognition.interimResults = true;
-            recognition.continuous = false;
-            recognition.maxAlternatives = 1;
-
-            const existingText = input;
-
-            recognition.onstart = () => {
-                setIsListening(true);
-                setVoiceNotice({
-                    type: 'info',
-                    msg: '🎙️ Listening... (Speak now, stops automatically when you pause)'
-                });
-                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-                // If user doesn't say anything for 6s, auto-stop
-                silenceTimerRef.current = setTimeout(() => {
-                    stopVoiceInput();
-                }, 6000);
-            };
-
-            recognition.onresult = (event) => {
-                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-
-                let interim = '';
-                let finalTranscript = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const transcript = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcript;
-                    } else {
-                        interim += transcript;
-                    }
-                }
-
-                const prefix = existingText ? existingText + ' ' : '';
-                setInput(prefix + finalTranscript + interim);
-
-                // Stop quickly when user pauses speaking (800ms after final, 1200ms after interim)
-                silenceTimerRef.current = setTimeout(() => {
-                    stopVoiceInput();
-                }, finalTranscript ? 800 : 1200);
-            };
-
-            recognition.onerror = (event) => {
-                console.warn('Speech recognition error:', event.error);
-                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-
-                if (event.error === 'language-not-supported') {
-                    // Fall back to Whisper on language not supported
-                    startWhisperRecording(language);
-                    return;
-                } else if (event.error === 'not-allowed') {
-                    setVoiceNotice({
-                        type: 'error',
-                        msg: 'Microphone permission denied. Please allow microphone access in browser settings.'
-                    });
-                    setTimeout(() => setVoiceNotice(null), 4000);
-                } else if (event.error !== 'no-speech') {
-                    setVoiceNotice({
-                        type: 'error',
-                        msg: `Voice error: ${event.error}`
-                    });
-                    setTimeout(() => setVoiceNotice(null), 3000);
-                }
-
-                setIsListening(false);
-                recognitionRef.current = null;
-            };
-
-            recognition.onend = () => {
-                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-                setIsListening(false);
-                setVoiceNotice(null);
-                recognitionRef.current = null;
-                inputRef.current?.focus();
-            };
-
-            recognitionRef.current = recognition;
-            try {
-                recognition.start();
-            } catch (err) {
-                console.error('Failed to start speech recognition:', err);
-                setIsListening(false);
-                recognitionRef.current = null;
-            }
-        };
-
-        const initialLang = SPEECH_LANG[language] || 'en-IN';
-        startRecognitionInstance(initialLang);
-    }, [isListening, isTranscribing, language, input, stopVoiceInput, startWhisperRecording]);
+        startWhisperRecording(language);
+    }, [isListening, isTranscribing, language, stopVoiceInput, startWhisperRecording]);
 
     const sendMessage = async (text) => {
         if (!text.trim() || isLoading) return;
