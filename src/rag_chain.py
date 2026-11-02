@@ -90,7 +90,7 @@ def get_optimized_retriever(search_type="mmr"):
 def get_llm(streaming=False):
     """
     Get LLM with optional streaming support.
-    Uses Groq (Llama 3.3 70B) exclusively.
+    Uses Groq (openai/gpt-oss-120b) exclusively.
     """
     groq_api_key = os.getenv("GROQ_API_KEY")
     
@@ -100,14 +100,16 @@ def get_llm(streaming=False):
             "Add it as a Secret in your HuggingFace Space settings."
         )
     
+    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model=model_name,
         groq_api_key=groq_api_key,
         temperature=0.1,
         streaming=streaming
     )
     if not streaming:
-        print("✅ Using Groq LLM (Llama 3.3 70B)")
+        print(f"✅ Using Groq LLM ({model_name})")
     
     return llm
 

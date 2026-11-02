@@ -46,7 +46,7 @@ graph TD
         Embed -->|MMR Search| Vector[(FAISS Vector Store)]
         Vector -->|Return Source Context| Backend
         
-        Backend -->|Combine Query + Context| LLM((Groq LLM: Llama 3.3))
+        Backend -->|Combine Query + Context| LLM((Groq LLM: openai/gpt-oss-120b))
         LLM -->|Generate Precise Answer| Backend
     end
     
@@ -58,7 +58,7 @@ graph TD
 1. **Query Processing:** We capture user input either through text or via voice using the Web Speech API in specific locales (en-IN, hi-IN, as-IN). If the query is not in English, it is translated on the fly using `deep-translator`.
 2. **Context Retrieval:** The synthesized query is converted into embeddings. We use a FAISS index to run a Maximal Marginal Relevance (MMR) search, which retrieves the most relevant and diverse text chunks from our pre-processed document database.
 3. **Citation Management:** During the initial data ingestion phase, every text chunk is paired with metadata specifying its source file and page location. 
-4. **Response Generation:** The retrieved context, combined with the original query, is fed into the Llama 3.3 70B model via the fast Groq inference API to generate a precise answer.
+4. **Response Generation:** The retrieved context, combined with the original query, is fed into the openai/gpt-oss-120b model via the fast Groq inference API to generate a precise answer.
 5. **Presentation:** The backend formats the citation cleanly by processing the metadata before sending the final textual response back to the frontend to be displayed to the user.
 
 ---
@@ -197,9 +197,9 @@ The accuracy of NPS Bondhu relies entirely on publicly available, official text,
 ## API Providers
 
 ### Groq 
-- **Model Used:** Llama 3.3 70B Versatile
+- **Model Used:** openai/gpt-oss-120b
 - **Reasoning:** Selected for its exceptional inference speed, delivering responses in roughly 1 to 3 seconds.
-- **Access:** Create a key at console.groq.com.
+- **Access:** Create a key at [console.groq.com](https://console.groq.com).
 
 ---
 
@@ -209,7 +209,7 @@ The project relies on a modern array of tools and libraries to function optimall
 
 - **Frontend Interface:** React 18, Vite, TailwindCSS, Framer Motion
 - **Backend API Servers:** FastAPI, Gunicorn, Uvicorn
-- **Language Models:** Groq (Llama 3.3 70B) routed via LangChain
+- **Language Models:** Groq (openai/gpt-oss-120b) routed via LangChain
 - **Embeddings Pipeline:** sentence-transformers/all-MiniLM-L6-v2
 - **Vector Storage Approach:** FAISS utilizing Maximal Marginal Relevance (MMR) searches
 - **Translation Services:** deep-translator acting as an interface to Google Translate
