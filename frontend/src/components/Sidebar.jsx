@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Globe, Info, ShieldCheck, X, MessageSquarePlus, Sparkles, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Sidebar = ({ language, setLanguage, isOpen, onClose }) => {
+const Sidebar = ({ language, setLanguage, isOpen, onClose, onNewChat }) => {
     const [isLangOpen, setIsLangOpen] = useState(false);
 
     const languages = [
@@ -79,7 +79,10 @@ const Sidebar = ({ language, setLanguage, isOpen, onClose }) => {
             {/* New Chat Button */}
             <div className="px-4 mb-1">
                 <button
-                    onClick={() => window.location.reload()}
+                    onClick={() => {
+                        if (onNewChat) onNewChat();
+                        if (onClose) onClose();
+                    }}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl
             bg-white/70 border border-blue-100/60
             text-sm font-medium text-slate-600

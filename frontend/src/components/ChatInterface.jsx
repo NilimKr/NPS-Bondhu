@@ -40,9 +40,11 @@ const ChatInterface = ({ language }) => {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [voiceNotice, setVoiceNotice] = useState(null);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const recognitionRef = useRef(null);
+    const silenceTimerRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,9 +66,13 @@ const ChatInterface = ({ language }) => {
         }
     }, [language]);
 
-    // Clean up speech recognition on unmount or language change
+    // Clean up speech recognition and timers on unmount or language change
     useEffect(() => {
         return () => {
+            if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = null;
+            }
             if (recognitionRef.current) {
                 recognitionRef.current.abort();
                 recognitionRef.current = null;
@@ -74,75 +80,143 @@ const ChatInterface = ({ language }) => {
         };
     }, [language]);
 
+    const stopVoiceInput = useCallback(() => {
+        if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+        }
+        if (recognitionRef.current) {
+            try {
+                recognitionRef.current.stop();
+            } catch (e) {
+                // Ignore already stopped error
+            }
+            recognitionRef.current = null;
+        }
+        setIsListening(false);
+    }, []);
+
     // ---------- Voice Input Logic ----------
     const toggleVoiceInput = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
         if (!SpeechRecognition) {
-            alert('Your browser does not support voice input. Please use Chrome or Edge.');
+            alert('Your browser does not support voice input. Please use Google Chrome or Edge.');
             return;
         }
 
         // If already listening, stop
-        if (isListening && recognitionRef.current) {
-            recognitionRef.current.stop();
+        if (isListening) {
+            stopVoiceInput();
             return;
         }
 
-        const recognition = new SpeechRecognition();
-        recognition.lang = SPEECH_LANG[language] || 'en-IN';
-        recognition.interimResults = true;
-        recognition.continuous = false;
-        recognition.maxAlternatives = 1;
+        setVoiceNotice(null);
 
-        recognitionRef.current = recognition;
+        const startRecognitionInstance = (targetLang, isFallback = false) => {
+            const recognition = new SpeechRecognition();
+            recognition.lang = targetLang;
+            recognition.interimResults = true;
+            recognition.continuous = false;
+            recognition.maxAlternatives = 1;
 
-        // Preserve any text already in the input
-        const existingText = input;
+            const existingText = input;
 
-        recognition.onstart = () => {
-            setIsListening(true);
-        };
+            recognition.onstart = () => {
+                setIsListening(true);
+                // Auto-stop if user says nothing for 8 seconds
+                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = setTimeout(() => {
+                    stopVoiceInput();
+                }, 8000);
+            };
 
-        recognition.onresult = (event) => {
-            let interim = '';
-            let finalTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += transcript;
-                } else {
-                    interim += transcript;
+            recognition.onresult = (event) => {
+                // Clear pending silence timer whenever speech is detected
+                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+                let interim = '';
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interim += transcript;
+                    }
                 }
+
+                // Append to existing text in input
+                const prefix = existingText ? existingText + ' ' : '';
+                setInput(prefix + finalTranscript + interim);
+
+                // Auto stop after 1.5 seconds of silence (or 1.2s if final result received)
+                silenceTimerRef.current = setTimeout(() => {
+                    stopVoiceInput();
+                }, finalTranscript ? 1200 : 1800);
+            };
+
+            recognition.onerror = (event) => {
+                console.warn('Speech recognition error:', event.error);
+                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+                if (event.error === 'language-not-supported') {
+                    if (targetLang === 'as-IN' && !isFallback) {
+                        // Desktop Chrome does not support as-IN; fall back to bn-IN (same Eastern Nagari script)
+                        setVoiceNotice(
+                            language === 'as'
+                                ? 'ব্ৰাউজাৰত as-IN সমৰ্থন নকৰাৰ বাবে আঞ্চলিক ভইচ ইনপুট ব্যৱহাৰ কৰা হৈছে।'
+                                : 'Assamese voice is not supported natively by this browser. Switched to regional phonetic input.'
+                        );
+                        startRecognitionInstance('bn-IN', true);
+                        return;
+                    } else {
+                        setVoiceNotice(
+                            language === 'as'
+                                ? 'আপোনাৰ ব্ৰাউজাৰত অসমীয়া ভইচ ইনপুট উপলব্ধ নহয়। অনুগ্ৰহ কৰি টাইপ কৰক।'
+                                : 'Voice input for this language is not supported by your browser. Please type your query.'
+                        );
+                    }
+                } else if (event.error === 'not-allowed') {
+                    setVoiceNotice(
+                        language === 'as'
+                            ? 'মাইক্ৰ’ফোনৰ অনুমতি দিয়া হোৱা নাই। অনুগ্ৰহ কৰি ব্ৰাউজাৰত অনুমতি দিয়ক।'
+                            : 'Microphone permission denied. Please allow microphone access in browser settings.'
+                    );
+                } else if (event.error !== 'no-speech') {
+                    setVoiceNotice(`Voice error: ${event.error}`);
+                }
+
+                setIsListening(false);
+                recognitionRef.current = null;
+            };
+
+            recognition.onend = () => {
+                if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+                setIsListening(false);
+                recognitionRef.current = null;
+                inputRef.current?.focus();
+            };
+
+            recognitionRef.current = recognition;
+            try {
+                recognition.start();
+            } catch (err) {
+                console.error('Failed to start speech recognition:', err);
+                setIsListening(false);
+                recognitionRef.current = null;
             }
-            // Append to any existing text in the input
-            const prefix = existingText ? existingText + ' ' : '';
-            setInput(prefix + finalTranscript + interim);
         };
 
-        recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            setIsListening(false);
-            recognitionRef.current = null;
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-            recognitionRef.current = null;
-            // Focus input so user can edit / send
-            inputRef.current?.focus();
-        };
-
-        recognition.start();
-    }, [isListening, language, input]);
+        const initialLang = SPEECH_LANG[language] || 'en-IN';
+        startRecognitionInstance(initialLang);
+    }, [isListening, language, input, stopVoiceInput]);
 
     const sendMessage = async (text) => {
         if (!text.trim() || isLoading) return;
 
         // Stop listening if active
-        if (isListening && recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
+        stopVoiceInput();
 
         const userMessage = { role: 'user', content: text.trim(), timestamp: new Date() };
         setMessages((prev) => [...prev, userMessage]);
@@ -310,6 +384,22 @@ const ChatInterface = ({ language }) => {
                         ))}
                     </div>
                 </div>
+
+                {/* Voice Input Notice / Fallback Banner */}
+                {voiceNotice && (
+                    <div className="max-w-2xl mx-auto px-4 md:px-6 pb-2">
+                        <div className="text-[12px] px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/80 text-blue-700 flex items-center justify-between shadow-sm animate-fade-in">
+                            <span>{voiceNotice}</span>
+                            <button
+                                type="button"
+                                onClick={() => setVoiceNotice(null)}
+                                className="ml-2 text-blue-400 hover:text-blue-700 font-bold text-sm leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Input */}
                 <div className="px-4 md:px-6 pb-4">
